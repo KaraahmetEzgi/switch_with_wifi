@@ -1,3 +1,5 @@
 {
-    "idf.adapterTargetName": "esp32s3"
+    "idf.adapterTargetName": "esp32s3",
+    "idf.portWin": "COM24",
+    "idf.flashType": "UART"
 }

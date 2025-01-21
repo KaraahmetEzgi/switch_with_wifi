@@ -17,19 +17,19 @@
 #define DEFAULT_SCAN_LIST_SIZE 20
 #define PORT 23
 
-#define LED_PIN1 GPIO_NUM_38 
-#define LED_PIN2 GPIO_NUM_37
-#define LED_PIN3 GPIO_NUM_36
-#define LED_PIN4 GPIO_NUM_35
+// #define LED_PIN1 GPIO_NUM_38 
+// #define LED_PIN2 GPIO_NUM_37
+// #define LED_PIN3 GPIO_NUM_36
+// #define LED_PIN4 GPIO_NUM_35
 
-#define LED_PIN5 GPIO_NUM_10 
-#define LED_PIN6 GPIO_NUM_11
-#define LED_PIN7 GPIO_NUM_12
-#define LED_PIN8 GPIO_NUM_13
+// #define LED_PIN5 GPIO_NUM_10 
+// #define LED_PIN6 GPIO_NUM_11
+// #define LED_PIN7 GPIO_NUM_12
+// #define LED_PIN8 GPIO_NUM_13
 
 #define LOG_ENABLE 0
 static const char *TAG = "wifi_ap";
-
+static int led_pins[8] = {GPIO_NUM_38,GPIO_NUM_37,GPIO_NUM_36,GPIO_NUM_35,GPIO_NUM_10,GPIO_NUM_11,GPIO_NUM_12,GPIO_NUM_13};
 typedef struct {
     wifi_ap_record_t ap_info[DEFAULT_SCAN_LIST_SIZE];
     uint16_t ap_count;
@@ -127,99 +127,54 @@ static void connect_to_wifi(const char* ssid, const char* password)
     ESP_ERROR_CHECK(esp_wifi_connect());
 }
 static void switch_function(const char* state){
-// 0. bit control (1. LED)
-if (state[0] == '1') {
-    gpio_set_level(LED_PIN1, 1);
-} else if (state[0] == '0') {
-    gpio_set_level(LED_PIN1, 0);
-}else {
-    ESP_LOGI(TAG, "Invalid command");
+    // 0. bit control (1. LED)
+    for (size_t i = 0; i < 8; i++)
+    {    
+        if (state[i] == '1') {
+            gpio_set_level(led_pins[i], 1);
+            ESP_LOGI("DEBUG", "Setted HIGH for switch %d",i);
+        }
+        else if(state[i] == '0'){
+            gpio_set_level(led_pins[i], 0);
+            ESP_LOGI("DEBUG", "Setted LOW for switch %d",i);
+        }
+        else {
+            ESP_LOGI("ERROR", "Invalid command for switch %d",i);
+            return -1;
+        }
+    }
+    int err = nvs_open("storage", NVS_READWRITE, &switch_handle);
+        if (err != ESP_OK) {
+            //printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
+
+            ESP_LOGI(TAG,"Error (%s) opening NVS handle!\n", esp_err_to_name(err));
+        } 
+        else {
+            ESP_LOGI("DEBUG","switch_state: %s", state);
+            err = nvs_set_str(switch_handle, "switch_state", state);
+            const char* Failedmessage = (err != ESP_OK) ? "Switch states setting failed! Try Again!" : "Switch states setting successfull.";
+            ESP_LOGI(TAG, "%s", Failedmessage);
+            nvs_close(switch_handle);
+    }
+
+    //const char *hello_msg = "Wifi connected\r\n";
+    //send(sock, state, strlen(state), 0); 
 }
 
-if (state[1] == '1') {
-    gpio_set_level(LED_PIN2, 1);
-} else if (state[1] == '0') {
-    gpio_set_level(LED_PIN2, 0);
-}else {
-    ESP_LOGI(TAG, "Invalid command");
-}
-
-if (state[2] == '1') {
-    gpio_set_level(LED_PIN3, 1);
-} else if (state[2] == '0') {
-    gpio_set_level(LED_PIN3, 0);
-}else {
-    ESP_LOGI(TAG, "Invalid command");
-}
-
-if (state[3] == '1') {
-    gpio_set_level(LED_PIN4, 1);
-} else if (state[3] == '0') {
-    gpio_set_level(LED_PIN4, 0);
-}else {
-    ESP_LOGI(TAG, "Invalid command");
-}
-
-if (state[4] == '1') {
-    gpio_set_level(LED_PIN5, 1);
-} else if (state[4] == '0') {
-    gpio_set_level(LED_PIN5, 0);
-}else {
-    ESP_LOGI(TAG, "Invalid command");
-}
-
-if (state[5] == '1') {
-    gpio_set_level(LED_PIN6, 1);
-} else if (state[5] == '0') {
-    gpio_set_level(LED_PIN6, 0);
-}else {
-    ESP_LOGI(TAG, "Invalid command");
-}
-
-if (state[6] == '1') {
-    gpio_set_level(LED_PIN7, 1);
-} else if (state[6] == '0') {
-    gpio_set_level(LED_PIN7, 0);
-}
-else {                    
-    ESP_LOGI(TAG, "Invalid command");
-}
-
-if (state[7] == '1') {
-    gpio_set_level(LED_PIN8, 1);
-} else if (state[7] == '0') {
-    gpio_set_level(LED_PIN8, 0);
-}
-else {
-    ESP_LOGI(TAG, "Invalid command");
-}   
-                    }
 static void telnet_task(void *pvParameters)
 {
-    char rx_buffer[128];
+    char rx_buffer[1024];
     
     char addr_str[128];
     int addr_family;
     int ip_protocol;
 
     // LED GPIO pin output mode
-    gpio_pad_select_gpio(LED_PIN1);
-    gpio_set_direction(LED_PIN1, GPIO_MODE_OUTPUT);
-    gpio_pad_select_gpio(LED_PIN2);
-    gpio_set_direction(LED_PIN2, GPIO_MODE_OUTPUT);
-    gpio_pad_select_gpio(LED_PIN3);
-    gpio_set_direction(LED_PIN3, GPIO_MODE_OUTPUT);
-    gpio_pad_select_gpio(LED_PIN4);
-    gpio_set_direction(LED_PIN4, GPIO_MODE_OUTPUT);
-
-    gpio_pad_select_gpio(LED_PIN5);
-    gpio_set_direction(LED_PIN5, GPIO_MODE_OUTPUT);
-    gpio_pad_select_gpio(LED_PIN6);
-    gpio_set_direction(LED_PIN6, GPIO_MODE_OUTPUT);
-    gpio_pad_select_gpio(LED_PIN7);
-    gpio_set_direction(LED_PIN7, GPIO_MODE_OUTPUT);
-    gpio_pad_select_gpio(LED_PIN8);
-    gpio_set_direction(LED_PIN8, GPIO_MODE_OUTPUT);
+    for (size_t i = 0; i < 8; i++)
+    {
+        gpio_set_direction(led_pins[i], GPIO_MODE_OUTPUT);
+    }
+    
 
     while (1) {
         struct sockaddr_in destAddr;
@@ -264,13 +219,13 @@ static void telnet_task(void *pvParameters)
             ESP_LOGI(TAG, "Socket accepted");
 
             // new connected message "Wifi connedted" 
-            const char *hello_msg = "Wifi connedted\r\n";
+            const char *hello_msg = "Wifi connected \r\n";
             send(sock, hello_msg, strlen(hello_msg), 0);
 
         
 
             while (1) {
-                
+                bool success_flag = false;
                 int len = recv(sock, rx_buffer, sizeof(rx_buffer) - 1, 0);
                 if (len < 0) {
                     ESP_LOGE(TAG, "recv failed: errno %d", errno);
@@ -279,28 +234,26 @@ static void telnet_task(void *pvParameters)
                     ESP_LOGI(TAG, "Connection closed");
                     break;
                 } else {
-                    ESP_LOGI(TAG, "Received data:");
-                    // for (int i = 0; i < len; i++) {
-                    //     ESP_LOGI(TAG, "0x%02X ", rx_buffer[i]);
-                    // }
-                    err = nvs_open("storage", NVS_READWRITE, &switch_handle);
-                    if (err != ESP_OK) {
-                        //printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
-
-                        ESP_LOGI(TAG,"Error (%s) opening NVS handle!\n", esp_err_to_name(err));
-                    } else {
-                        err = nvs_set_str(switch_handle, "switch_state", rx_buffer);
-                        const char* Failedmessage = (err != ESP_OK) ? "Failed!" : "Done";
-                        ESP_LOGI(TAG, "%s", Failedmessage);
-
-                        //printf((err != ESP_OK) ? "Failed!\n" : "Done\n"); 
-                        nvs_close(switch_handle);
+                    // if (strncmp(rx_buffer, "\n", 2) != 0)
+                    if (rx_buffer[len -1] == '\n' || rx_buffer[len-1] == '\r')
+                    {
+                        rx_buffer[len] = '\0';
+                        ESP_LOGI(TAG, "Received data:%s", rx_buffer);
+                        char tx_buffer[len+13];
+                        snprintf(tx_buffer,sizeof(tx_buffer),"Switch setted %s \r\n",rx_buffer);
+                        int send_res = send(sock,tx_buffer, strlen(tx_buffer), 0);
+                        // if (send_res < 0) {
+                        //     ESP_LOGE(TAG, "Error sending data back: errno %d", errno);
+                        // } else {
+                        //     ESP_LOGI(TAG, "Data sent back to client: %s", rx_buffer);
+                        // }
+                        switch_function(rx_buffer); 
                     }
-                    switch_function(rx_buffer);
                     
- 
-                                       
+                            
                 }
+                
+                
             }
 
             if (sock != -1) {
