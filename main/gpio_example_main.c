@@ -10,26 +10,36 @@
 #include "lwip/sockets.h"
 #include "driver/gpio.h"
 
-#define AP_SSID "EZGI_ESP_test"
+#include "esp_system.h"
+#include "esp_mac.h"
+
+
+
+// AP_SSID oluşturma
+char ap_ssid[32];  // SSID buffer
+char device_mac_str[18]; // MAC buffer
+
+void get_mac_address_str() {
+    uint8_t mac[6];
+    esp_read_mac(mac, ESP_MAC_WIFI_SOFTAP);
+    snprintf(device_mac_str, sizeof(device_mac_str), "ESP32S3_%02X%02X%02X", mac[3], mac[4], mac[5]);
+}
+
+void create_unique_ap_ssid(void) {
+    get_mac_address_str();
+    snprintf(ap_ssid, sizeof(ap_ssid), "%s", device_mac_str);
+}
+
 #define AP_PASSWORD "12345678"
 #define AP_MAX_CONN 4
 #define AP_CHANNEL 1
 #define DEFAULT_SCAN_LIST_SIZE 20
 #define PORT 23
 
-// #define LED_PIN1 GPIO_NUM_38 
-// #define LED_PIN2 GPIO_NUM_37
-// #define LED_PIN3 GPIO_NUM_36
-// #define LED_PIN4 GPIO_NUM_35
-
-// #define LED_PIN5 GPIO_NUM_10 
-// #define LED_PIN6 GPIO_NUM_11
-// #define LED_PIN7 GPIO_NUM_12
-// #define LED_PIN8 GPIO_NUM_13
-
 #define LOG_ENABLE 0
 static const char *TAG = "wifi_ap";
-static int led_pins[8] = {GPIO_NUM_38,GPIO_NUM_37,GPIO_NUM_36,GPIO_NUM_35,GPIO_NUM_10,GPIO_NUM_11,GPIO_NUM_12,GPIO_NUM_13};
+static int led_pins[8] = {GPIO_NUM_38, GPIO_NUM_37, GPIO_NUM_36, GPIO_NUM_35, GPIO_NUM_10, GPIO_NUM_11, GPIO_NUM_12, GPIO_NUM_13};
+
 typedef struct {
     wifi_ap_record_t ap_info[DEFAULT_SCAN_LIST_SIZE];
     uint16_t ap_count;
@@ -37,8 +47,8 @@ typedef struct {
 
 static scan_results_t scan_results;
 nvs_handle_t switch_handle;
-static void wifi_scan(void)
-{
+
+static void wifi_scan(void) {
     uint16_t number = DEFAULT_SCAN_LIST_SIZE;
     memset(&scan_results, 0, sizeof(scan_results));
 
@@ -52,24 +62,20 @@ static void wifi_scan(void)
     }
 }
 
-static void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
-{
+static void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         ESP_LOGI(TAG, "Wi-Fi STA started");
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         ESP_LOGI(TAG, "Wi-Fi STA disconnected");
         esp_wifi_connect();
-        ESP_LOGI(TAG, "retry to connect to the AP");
+        ESP_LOGI(TAG, "Retrying connection to AP");
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
-        ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
-        printf("Got IP: %s\n", ip4addr_ntoa(&event->ip_info.ip));
+        ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&event->ip_info.ip));
     }
 }
 
-static void init_wifi(void)
-{
-    // Initialize NVS
+static void init_wifi(void) {
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
@@ -89,76 +95,48 @@ static void init_wifi(void)
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL));
 
-    wifi_config_t ap_config = {
-        .ap = {
-            .ssid = AP_SSID,
-            .ssid_len = strlen(AP_SSID),
-            .password = AP_PASSWORD,
-            .max_connection = AP_MAX_CONN,
-            .authmode = WIFI_AUTH_WPA_WPA2_PSK
-        },
-    };
+    wifi_config_t ap_config = {0};
+    create_unique_ap_ssid();
+    strncpy((char*)ap_config.ap.ssid, ap_ssid, sizeof(ap_config.ap.ssid));
+    ap_config.ap.ssid_len = strlen(ap_ssid);
+    strncpy((char*)ap_config.ap.password, AP_PASSWORD, sizeof(ap_config.ap.password));
+    ap_config.ap.max_connection = AP_MAX_CONN;
+    ap_config.ap.authmode = WIFI_AUTH_WPA_WPA2_PSK;
 
     if (strlen(AP_PASSWORD) == 0) {
         ap_config.ap.authmode = WIFI_AUTH_OPEN;
     }
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
-    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_AP, &ap_config));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
     ESP_ERROR_CHECK(esp_wifi_start());
 
     ESP_LOGI(TAG, "init_wifi finished.");
 }
 
-static void connect_to_wifi(const char* ssid, const char* password)
-{
-    wifi_config_t wifi_config = {
-        .sta = {
-            .ssid = "",
-            .password = ""
-        },
-    };
-
-    strncpy((char*)wifi_config.sta.ssid, ssid, sizeof(wifi_config.sta.ssid));
-    strncpy((char*)wifi_config.sta.password, password, sizeof(wifi_config.sta.password));
-
-    ESP_ERROR_CHECK(esp_wifi_disconnect());
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
-    ESP_ERROR_CHECK(esp_wifi_connect());
-}
-static void switch_function(const char* state){
-    // 0. bit control (1. LED)
-    for (size_t i = 0; i < 8; i++)
-    {    
+static void switch_function(const char* state) {
+    for (size_t i = 0; i < 8; i++) {
         if (state[i] == '1') {
             gpio_set_level(led_pins[i], 1);
-            ESP_LOGI("DEBUG", "Setted HIGH for switch %d",i);
-        }
-        else if(state[i] == '0'){
+            ESP_LOGI("DEBUG", "Set HIGH for switch %d", i);
+        } else if (state[i] == '0') {
             gpio_set_level(led_pins[i], 0);
-            ESP_LOGI("DEBUG", "Setted LOW for switch %d",i);
-        }
-        else {
-            ESP_LOGI("ERROR", "Invalid command for switch %d",i);
-            return -1;
+            ESP_LOGI("DEBUG", "Set LOW for switch %d", i);
+        } else {
+            ESP_LOGI("ERROR", "Invalid command for switch %d", i);
+            return;
         }
     }
+
     int err = nvs_open("storage", NVS_READWRITE, &switch_handle);
-        if (err != ESP_OK) {
-            //printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
-
-            ESP_LOGI(TAG,"Error (%s) opening NVS handle!\n", esp_err_to_name(err));
-        } 
-        else {
-            ESP_LOGI("DEBUG","switch_state: %s", state);
-            err = nvs_set_str(switch_handle, "switch_state", state);
-            const char* Failedmessage = (err != ESP_OK) ? "Switch states setting failed! Try Again!" : "Switch states setting successfull.";
-            ESP_LOGI(TAG, "%s", Failedmessage);
-            nvs_close(switch_handle);
+    if (err != ESP_OK) {
+        ESP_LOGI(TAG, "Error (%s) opening NVS handle!", esp_err_to_name(err));
+    } else {
+        ESP_LOGI("DEBUG", "switch_state: %s", state);
+        err = nvs_set_str(switch_handle, "switch_state", state);
+        ESP_LOGI(TAG, "%s", (err != ESP_OK) ? "Switch states setting failed! Try Again!" : "Switch states setting successful.");
+        nvs_close(switch_handle);
     }
-
-    //const char *hello_msg = "Wifi connected\r\n";
-    //send(sock, state, strlen(state), 0); 
 }
 
 static void telnet_task(void *pvParameters)
@@ -219,7 +197,7 @@ static void telnet_task(void *pvParameters)
             ESP_LOGI(TAG, "Socket accepted");
 
             // new connected message "Wifi connedted" 
-            const char *hello_msg = "Wifi connected \r\n";
+            const char *hello_msg = "Wifi connected \r\n Please enter switch configuration";
             send(sock, hello_msg, strlen(hello_msg), 0);
 
         
